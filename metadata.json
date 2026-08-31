@@ -1,0 +1,6 @@
+{
+  "name": "UHF RFID Inventory & Product Finder",
+  "description": "Standalone offline Android mobile application UI/UX for H103 Bluetooth UHF RFID Sled Reader with inventory counting, tag radar finder, product catalog, and CSV/Excel import-export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
