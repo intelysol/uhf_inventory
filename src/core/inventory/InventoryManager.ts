@@ -13,6 +13,14 @@ export class InventoryManager {
   private inventoryMap: Map<string, InventoryTag> = new Map();
   private totalReads: number = 0;
   private productIndex: Map<string, Product> = new Map();
+
+  // Expected inventory tracking
+  private expectedEpcs: Set<string> = new Set();
+  private expectedProductSnapshot: Map<
+    string,
+    { id: string; name: string; sku: string; location?: string }
+  > = new Map();
+
   private unsubscribeHid: (() => void) | null = null;
   private elapsedInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -21,13 +29,19 @@ export class InventoryManager {
   private latestScanListeners: Set<LatestScanListener> = new Set();
 
   /**
-   * Start a new active inventory session.
+   * Start a new active inventory session with optional expected product selection.
+   *
+   * @param expectedProductSelection
+   *   - 'ALL': include all catalog products in expectedSet
+   *   - 'BLIND': no expected items (blind count)
+   *   - string[]: array of specific product IDs to expect
    */
   public startSession(
     name: string,
     location?: string,
     notes?: string,
-    products: Product[] = []
+    products: Product[] = [],
+    expectedProductSelection: 'ALL' | 'BLIND' | string[] = 'ALL'
   ): InventorySession {
     // 1. Clean up any existing active session
     if (this.activeSession) {
@@ -43,11 +57,49 @@ export class InventoryManager {
       });
     });
 
-    // 3. Reset session map and counters
+    // 3. Build expected EPC Set
+    this.expectedEpcs.clear();
+    this.expectedProductSnapshot.clear();
+
+    if (expectedProductSelection === 'ALL') {
+      products.forEach(p => {
+        p.epcList.forEach(rawEpc => {
+          const norm = rawEpc.trim().toUpperCase();
+          this.expectedEpcs.add(norm);
+          this.expectedProductSnapshot.set(norm, {
+            id: p.id,
+            name: p.name,
+            sku: p.sku,
+            location: p.location,
+          });
+        });
+      });
+    } else if (Array.isArray(expectedProductSelection)) {
+      const allowedIds = new Set(expectedProductSelection);
+      products
+        .filter(p => allowedIds.has(p.id))
+        .forEach(p => {
+          p.epcList.forEach(rawEpc => {
+            const norm = rawEpc.trim().toUpperCase();
+            this.expectedEpcs.add(norm);
+            this.expectedProductSnapshot.set(norm, {
+              id: p.id,
+              name: p.name,
+              sku: p.sku,
+              location: p.location,
+            });
+          });
+        });
+    }
+    // 'BLIND' leaves expectedEpcs empty
+
+    // 4. Reset session map and counters
     this.inventoryMap.clear();
     this.totalReads = 0;
     this.latestScan = null;
     const now = Date.now();
+
+    const expectedCount = this.expectedEpcs.size;
 
     const newSession: InventorySession = {
       id: `session-${now}`,
@@ -63,9 +115,9 @@ export class InventoryManager {
       // Compatibility fields
       startTime: new Date(now).toISOString(),
       durationSeconds: 0,
-      expectedCount: products.reduce((acc, p) => acc + p.epcList.length, 0),
+      expectedCount,
       foundCount: 0,
-      missingCount: 0,
+      missingCount: expectedCount,
       extraCount: 0,
       unknownCount: 0,
       scannedTags: [],
@@ -74,11 +126,11 @@ export class InventoryManager {
     this.activeSession = newSession;
     this.isScanning = true;
 
-    // 4. Ensure HID scanner service is active and subscribe to real RFID events
+    // 5. Ensure HID scanner service is active and subscribe to real RFID events
     hidScannerService.start();
     this.unsubscribeHid = hidScannerService.subscribe(this.processRfidScan.bind(this));
 
-    // 5. Start elapsed timer
+    // 6. Start elapsed timer
     this.startElapsedTimer();
 
     this.notifySessionListeners();
@@ -98,7 +150,7 @@ export class InventoryManager {
       return;
     }
 
-    const epc = event.value; // Already normalized to uppercase without CRLF/spaces
+    const epc = event.value.trim().toUpperCase();
     const existing = this.inventoryMap.get(epc);
 
     if (existing) {
@@ -113,9 +165,24 @@ export class InventoryManager {
         lastSeen: existing.lastSeen,
       };
     } else {
-      // NEW EPC RULE: Create new InventoryTag and perform O(1) product lookup
+      // NEW EPC RULE: Perform O(1) product lookup & determine status
       const prod = this.productIndex.get(epc);
-      const isFound = Boolean(prod);
+      const isExpected = this.expectedEpcs.has(epc);
+
+      let status: 'FOUND' | 'MISSING' | 'EXTRA' | 'UNKNOWN';
+
+      if (this.expectedEpcs.size > 0) {
+        if (isExpected) {
+          status = 'FOUND';
+        } else if (prod) {
+          status = 'EXTRA';
+        } else {
+          status = 'UNKNOWN';
+        }
+      } else {
+        // Blind count: no expected set
+        status = prod ? 'FOUND' : 'UNKNOWN';
+      }
 
       const newTag: InventoryTag = {
         epc,
@@ -123,7 +190,7 @@ export class InventoryManager {
         productName: prod ? prod.name : null,
         sku: prod ? prod.sku : null,
         location: prod ? prod.location : null,
-        status: isFound ? 'FOUND' : 'UNKNOWN',
+        status,
         readCount: 1,
         firstSeen: event.timestamp,
         lastSeen: event.timestamp,
@@ -144,7 +211,7 @@ export class InventoryManager {
   }
 
   /**
-   * Stop the active inventory session and persist it.
+   * Stop the active inventory session, compute final Missing/Found/Extra tags, and persist.
    */
   public stopSession(): InventorySession | null {
     if (!this.activeSession) return null;
@@ -160,16 +227,61 @@ export class InventoryManager {
 
     this.isScanning = false;
     const now = Date.now();
-    const finalSession = this.buildSessionSnapshot();
-    finalSession.status = 'COMPLETED';
-    finalSession.completedAt = now;
-    finalSession.endTime = new Date(now).toISOString();
 
-    // 3. Persist session to StorageService with duplicate protection
+    // 3. Compile full tag list including missing expected tags
+    const scannedTagsList = Array.from(this.inventoryMap.values());
+    const finalTagsList: InventoryTag[] = [...scannedTagsList];
+
+    // Compute MISSING tags: expectedSet - scannedSet
+    if (this.expectedEpcs.size > 0) {
+      this.expectedEpcs.forEach(expectedEpc => {
+        if (!this.inventoryMap.has(expectedEpc)) {
+          const prodInfo = this.expectedProductSnapshot.get(expectedEpc);
+          const missingTag: InventoryTag = {
+            epc: expectedEpc,
+            productId: prodInfo?.id ?? null,
+            productName: prodInfo?.name ?? 'Expected Item',
+            sku: prodInfo?.sku ?? 'N/A',
+            location: prodInfo?.location ?? this.activeSession?.location ?? null,
+            status: 'MISSING',
+            readCount: 0,
+            firstSeen: 0,
+            lastSeen: 0,
+          };
+          finalTagsList.push(missingTag);
+        }
+      });
+    }
+
+    const uniqueTags = scannedTagsList.length;
+    const foundCount = scannedTagsList.filter(t => t.status === 'FOUND').length;
+    const extraCount = scannedTagsList.filter(t => t.status === 'EXTRA').length;
+    const unknownCount = scannedTagsList.filter(t => t.status === 'UNKNOWN').length;
+    const missingCount = Math.max(0, this.expectedEpcs.size - foundCount);
+
+    const finalSession: InventorySession = {
+      ...this.activeSession,
+      tags: finalTagsList,
+      scannedTags: finalTagsList,
+      totalReads: this.totalReads,
+      uniqueTags,
+      expectedCount: this.expectedEpcs.size,
+      foundCount,
+      missingCount,
+      extraCount,
+      unknownCount,
+      status: 'COMPLETED',
+      completedAt: now,
+      endTime: new Date(now).toISOString(),
+    };
+
+    // 4. Persist session to StorageService with duplicate protection
     this.persistCompletedSession(finalSession);
 
     this.activeSession = null;
     this.inventoryMap.clear();
+    this.expectedEpcs.clear();
+    this.expectedProductSnapshot.clear();
     this.totalReads = 0;
     this.latestScan = null;
 
@@ -227,29 +339,32 @@ export class InventoryManager {
   }
 
   /**
-   * Builds an immutable snapshot of the active inventory session.
+   * Builds an immutable snapshot of the active inventory session for live UI rendering.
    */
   private buildSessionSnapshot(): InventorySession {
     if (!this.activeSession) {
       throw new Error('No active session');
     }
 
-    // Convert Map values to array
-    const tagList: InventoryTag[] = Array.from(this.inventoryMap.values());
-    const uniqueTags = tagList.length;
-    const foundCount = tagList.filter(t => t.status === 'FOUND').length;
-    const unknownCount = tagList.filter(t => t.status === 'UNKNOWN').length;
+    const scannedTags: InventoryTag[] = Array.from(this.inventoryMap.values());
+    const uniqueTags = scannedTags.length;
+    const foundCount = scannedTags.filter(t => t.status === 'FOUND').length;
+    const extraCount = scannedTags.filter(t => t.status === 'EXTRA').length;
+    const unknownCount = scannedTags.filter(t => t.status === 'UNKNOWN').length;
+    const expectedCount = this.expectedEpcs.size;
+    const missingCount = Math.max(0, expectedCount - foundCount);
 
     const snapshot: InventorySession = {
       ...this.activeSession,
-      tags: tagList,
-      scannedTags: tagList,
+      tags: scannedTags,
+      scannedTags,
       totalReads: this.totalReads,
       uniqueTags,
+      expectedCount,
       foundCount,
+      missingCount,
+      extraCount,
       unknownCount,
-      missingCount: Math.max(0, this.activeSession.expectedCount - foundCount),
-      extraCount: 0,
     };
 
     return snapshot;
@@ -279,7 +394,6 @@ export class InventoryManager {
         ...session,
         tags: Array.from(uniqueTagMap.values()),
         scannedTags: Array.from(uniqueTagMap.values()),
-        uniqueTags: uniqueTagMap.size,
       };
 
       // Upsert session

@@ -24,7 +24,7 @@ export const LiveInventoryScreen: React.FC = () => {
   } = useRFID();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<'ALL' | 'FOUND' | 'UNKNOWN'>('ALL');
+  const [activeFilter, setActiveFilter] = useState<'ALL' | 'FOUND' | 'EXTRA' | 'UNKNOWN'>('ALL');
   const [latestScan, setLatestScan] = useState<{ epc: string; readCount: number; lastSeen: number } | null>(
     inventoryManager.getLatestScan()
   );
@@ -96,6 +96,7 @@ export const LiveInventoryScreen: React.FC = () => {
   }
 
   const isHidActive = hidScannerService.isRunning();
+  const isExpectedMode = (session.expectedCount || 0) > 0;
 
   return (
     <div className="w-full h-full flex flex-col bg-[#f0f2f5] text-slate-900 select-none overflow-hidden pb-20">
@@ -106,6 +107,15 @@ export const LiveInventoryScreen: React.FC = () => {
             <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-200">
               LIVE INVENTORY AUDIT
             </span>
+            {isExpectedMode ? (
+              <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-indigo-800 text-indigo-200">
+                AUDIT MODE
+              </span>
+            ) : (
+              <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-slate-700 text-slate-200">
+                BLIND COUNT
+              </span>
+            )}
           </div>
           <h2 className="text-sm font-black text-white truncate">{session.name}</h2>
           <p className="text-[11px] text-indigo-200/90 truncate">{session.location || 'Warehouse Zone'}</p>
@@ -134,52 +144,113 @@ export const LiveInventoryScreen: React.FC = () => {
 
       {/* 2. CENTRAL COUNTERS & METRICS */}
       <div className="bg-white m-3 rounded-2xl border border-slate-300 shadow-md overflow-hidden shrink-0 relative">
-        <div className="pt-5 pb-3 px-4 text-center border-b border-slate-100 bg-slate-50/70">
-          <div className="text-slate-400 text-xs font-black uppercase tracking-widest mb-0.5">
-            UNIQUE TAGS
-          </div>
-          <div
-            id="lbl-live-unique-counter"
-            className="text-5xl font-black text-slate-900 tracking-tighter my-0.5"
-          >
-            {(session.uniqueTags || 0).toLocaleString()}
-          </div>
+        <div className="pt-4 pb-3 px-3 border-b border-slate-100 bg-slate-50/70">
+          {/* Main Counters Row */}
+          {isExpectedMode ? (
+            <div>
+              {/* 5-Column Grid for Expected Inventory */}
+              <div className="grid grid-cols-5 gap-1.5 text-center mb-3">
+                <div className="bg-slate-100/80 p-2 rounded-xl border border-slate-200">
+                  <div className="text-[9px] text-slate-500 font-bold uppercase truncate">EXPECTED</div>
+                  <div className="text-base font-black font-mono text-slate-800 mt-0.5">
+                    {(session.expectedCount || 0).toLocaleString()}
+                  </div>
+                </div>
 
-          <div className="mt-2 flex justify-center items-center space-x-6">
-            <div className="text-center">
-              <div className="text-[10px] text-slate-500 font-bold uppercase">TOTAL READS</div>
-              <div className="text-sm font-mono font-black text-[#3f51b5]">
-                {(session.totalReads || 0).toLocaleString()}
+                <div className="bg-emerald-50 p-2 rounded-xl border border-emerald-200 text-emerald-900">
+                  <div className="text-[9px] text-emerald-700 font-bold uppercase truncate">FOUND</div>
+                  <div className="text-base font-black font-mono text-emerald-700 mt-0.5">
+                    {(session.foundCount || 0).toLocaleString()}
+                  </div>
+                </div>
+
+                <div className="bg-red-50 p-2 rounded-xl border border-red-200 text-red-900">
+                  <div className="text-[9px] text-red-700 font-bold uppercase truncate">MISSING</div>
+                  <div className="text-base font-black font-mono text-red-700 mt-0.5">
+                    {(session.missingCount ?? Math.max(0, (session.expectedCount || 0) - (session.foundCount || 0))).toLocaleString()}
+                  </div>
+                </div>
+
+                <div className="bg-blue-50 p-2 rounded-xl border border-blue-200 text-blue-900">
+                  <div className="text-[9px] text-blue-700 font-bold uppercase truncate">EXTRA</div>
+                  <div className="text-base font-black font-mono text-blue-700 mt-0.5">
+                    {(session.extraCount || 0).toLocaleString()}
+                  </div>
+                </div>
+
+                <div className="bg-amber-50 p-2 rounded-xl border border-amber-200 text-amber-900">
+                  <div className="text-[9px] text-amber-700 font-bold uppercase truncate">UNKNOWN</div>
+                  <div className="text-base font-black font-mono text-amber-700 mt-0.5">
+                    {(session.unknownCount || 0).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Secondary Stats Row */}
+              <div className="flex justify-between items-center px-2 text-xs font-mono text-slate-600 border-t border-slate-200/60 pt-2">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-sans font-bold">UNIQUE TAGS: </span>
+                  <span className="font-black text-slate-900">{(session.uniqueTags || 0).toLocaleString()}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-sans font-bold">TOTAL READS: </span>
+                  <span className="font-black text-[#3f51b5]">{(session.totalReads || 0).toLocaleString()}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-sans font-bold">TIME: </span>
+                  <span className="font-black text-slate-800">{formatElapsed(session.durationSeconds)}</span>
+                </div>
               </div>
             </div>
-
-            <div className="w-[1px] h-6 bg-slate-200" />
-
+          ) : (
             <div className="text-center">
-              <div className="text-[10px] text-slate-500 font-bold uppercase">FOUND</div>
-              <div className="text-sm font-mono font-black text-emerald-600">
-                {(session.foundCount || 0).toLocaleString()}
+              <div className="text-slate-400 text-xs font-black uppercase tracking-widest mb-0.5">
+                UNIQUE TAGS SCANNED
+              </div>
+              <div
+                id="lbl-live-unique-counter"
+                className="text-5xl font-black text-slate-900 tracking-tighter my-0.5"
+              >
+                {(session.uniqueTags || 0).toLocaleString()}
+              </div>
+
+              <div className="mt-2 flex justify-center items-center space-x-6">
+                <div className="text-center">
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">TOTAL READS</div>
+                  <div className="text-sm font-mono font-black text-[#3f51b5]">
+                    {(session.totalReads || 0).toLocaleString()}
+                  </div>
+                </div>
+
+                <div className="w-[1px] h-6 bg-slate-200" />
+
+                <div className="text-center">
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">REGISTERED</div>
+                  <div className="text-sm font-mono font-black text-emerald-600">
+                    {(session.foundCount || 0).toLocaleString()}
+                  </div>
+                </div>
+
+                <div className="w-[1px] h-6 bg-slate-200" />
+
+                <div className="text-center">
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">UNKNOWN</div>
+                  <div className="text-sm font-mono font-black text-amber-600">
+                    {(session.unknownCount || 0).toLocaleString()}
+                  </div>
+                </div>
+
+                <div className="w-[1px] h-6 bg-slate-200" />
+
+                <div className="text-center">
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">DURATION</div>
+                  <div className="text-xs font-mono font-black text-slate-800">
+                    {formatElapsed(session.durationSeconds)}
+                  </div>
+                </div>
               </div>
             </div>
-
-            <div className="w-[1px] h-6 bg-slate-200" />
-
-            <div className="text-center">
-              <div className="text-[10px] text-slate-500 font-bold uppercase">UNKNOWN</div>
-              <div className="text-sm font-mono font-black text-amber-600">
-                {(session.unknownCount || 0).toLocaleString()}
-              </div>
-            </div>
-
-            <div className="w-[1px] h-6 bg-slate-200" />
-
-            <div className="text-center">
-              <div className="text-[10px] text-slate-500 font-bold uppercase">DURATION</div>
-              <div className="text-xs font-mono font-black text-slate-800">
-                {formatElapsed(session.durationSeconds)}
-              </div>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* 3. LATEST RFID TICKER */}
@@ -230,18 +301,23 @@ export const LiveInventoryScreen: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
-          {(['ALL', 'FOUND', 'UNKNOWN'] as const).map(chip => {
+          {(isExpectedMode
+            ? (['ALL', 'FOUND', 'EXTRA', 'UNKNOWN'] as const)
+            : (['ALL', 'FOUND', 'UNKNOWN'] as const)
+          ).map(chip => {
             const count =
               chip === 'ALL'
                 ? session.uniqueTags || 0
                 : chip === 'FOUND'
                 ? session.foundCount || 0
+                : chip === 'EXTRA'
+                ? session.extraCount || 0
                 : session.unknownCount || 0;
 
             return (
               <button
                 key={chip}
-                onClick={() => setActiveFilter(chip)}
+                onClick={() => setActiveFilter(chip as any)}
                 className={`px-3 py-1 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
                   activeFilter === chip
                     ? 'bg-[#3f51b5] text-white shadow-xs'
@@ -276,8 +352,6 @@ export const LiveInventoryScreen: React.FC = () => {
           </div>
         ) : (
           filteredTags.map(tag => {
-            const isFound = tag.status === 'FOUND';
-
             return (
               <div
                 key={tag.epc}
@@ -296,8 +370,12 @@ export const LiveInventoryScreen: React.FC = () => {
 
                   <span
                     className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase font-sans shrink-0 ${
-                      isFound
+                      tag.status === 'FOUND'
                         ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                        : tag.status === 'EXTRA'
+                        ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                        : tag.status === 'MISSING'
+                        ? 'bg-red-50 text-red-800 border border-red-200'
                         : 'bg-amber-50 text-amber-800 border border-amber-200'
                     }`}
                   >

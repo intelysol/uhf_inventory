@@ -41,14 +41,15 @@ interface RFIDContextValue {
   addProduct: (product: Omit<Product, 'id' | 'updatedAt'>) => Product;
   updateProduct: (product: Product) => void;
   deleteProduct: (id: string) => void;
-  assignTagToProduct: (epc: string, productId: string) => void;
+  checkEpcAssignment: (epc: string, excludeProductId?: string) => Product | null;
+  assignTagToProduct: (epc: string, productId: string, reassignFromOther?: boolean) => { success: boolean; conflictProduct?: Product };
   unassignTagFromProduct: (epc: string, productId: string) => void;
   bulkImportProducts: (imported: Array<{ sku: string; name: string; epc: string; location?: string; category?: string }>) => void;
   
   // Inventory Sessions
   sessions: InventorySession[];
   activeSession: InventorySession | null;
-  startInventorySession: (name: string, location: string, notes?: string, useExpectedList?: boolean) => void;
+  startInventorySession: (name: string, location: string, notes?: string, expectedProductSelection?: 'ALL' | 'BLIND' | string[] | boolean) => void;
   finishInventorySession: () => InventorySession | null;
   cancelInventorySession: () => void;
   deleteSession: (id: string) => void;
@@ -354,9 +355,15 @@ export const RFIDProvider: React.FC<{ children: React.ReactNode }> = ({ children
     name: string,
     location: string,
     notes?: string,
-    _useExpectedList = true
+    expectedProductSelection: 'ALL' | 'BLIND' | string[] | boolean = 'ALL'
   ) => {
-    const session = inventoryManager.startSession(name, location, notes, products);
+    let selection: 'ALL' | 'BLIND' | string[] = 'ALL';
+    if (typeof expectedProductSelection === 'boolean') {
+      selection = expectedProductSelection ? 'ALL' : 'BLIND';
+    } else {
+      selection = expectedProductSelection;
+    }
+    const session = inventoryManager.startSession(name, location, notes, products, selection);
     setActiveSession(session as any);
     setIsScanning(true);
     navigateTo('live_inventory');
@@ -406,21 +413,36 @@ export const RFIDProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setProducts(prev => prev.filter(p => p.id !== id));
   }, []);
 
-  const assignTagToProduct = useCallback((epc: string, productId: string) => {
+  const checkEpcAssignment = useCallback((rawEpc: string, excludeProductId?: string): Product | null => {
+    const norm = rawEpc.trim().toUpperCase();
+    return products.find(p => p.id !== excludeProductId && p.epcList.some(e => e.trim().toUpperCase() === norm)) || null;
+  }, [products]);
+
+  const assignTagToProduct = useCallback((rawEpc: string, productId: string, reassignFromOther = false): { success: boolean; conflictProduct?: Product } => {
+    const norm = rawEpc.trim().toUpperCase();
+    const conflict = products.find(p => p.id !== productId && p.epcList.some(e => e.trim().toUpperCase() === norm));
+    if (conflict && !reassignFromOther) {
+      return { success: false, conflictProduct: conflict };
+    }
+
     setProducts(prev => prev.map(p => {
       if (p.id === productId) {
-        if (!p.epcList.includes(epc)) {
-          return { ...p, epcList: [...p.epcList, epc] };
-        }
+        const without = p.epcList.filter(e => e.trim().toUpperCase() !== norm);
+        return { ...p, epcList: [...without, norm], updatedAt: new Date().toISOString() };
+      }
+      if (conflict && p.id === conflict.id && reassignFromOther) {
+        return { ...p, epcList: p.epcList.filter(e => e.trim().toUpperCase() !== norm), updatedAt: new Date().toISOString() };
       }
       return p;
     }));
-  }, []);
+    return { success: true };
+  }, [products]);
 
   const unassignTagFromProduct = useCallback((epc: string, productId: string) => {
+    const norm = epc.trim().toUpperCase();
     setProducts(prev => prev.map(p => {
       if (p.id === productId) {
-        return { ...p, epcList: p.epcList.filter(e => e !== epc) };
+        return { ...p, epcList: p.epcList.filter(e => e.trim().toUpperCase() !== norm), updatedAt: new Date().toISOString() };
       }
       return p;
     }));
@@ -557,6 +579,7 @@ export const RFIDProvider: React.FC<{ children: React.ReactNode }> = ({ children
     addProduct,
     updateProduct,
     deleteProduct,
+    checkEpcAssignment,
     assignTagToProduct,
     unassignTagFromProduct,
     bulkImportProducts,
