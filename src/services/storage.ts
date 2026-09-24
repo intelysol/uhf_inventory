@@ -1,12 +1,23 @@
 import * as XLSX from 'xlsx';
-import { Product, InventorySession, AppSettings, H103ReaderState, ExportOptions, ImportPreviewItem } from '../types/rfid';
+import { Product, InventorySession, AppSettings, H103ReaderState, ExportOptions } from '../types/rfid';
 import { INITIAL_PRODUCTS, INITIAL_SESSIONS, DEFAULT_READER_STATE, DEFAULT_APP_SETTINGS } from '../data/mockDatabase';
+import {
+  parseAndValidateProductImport,
+  ImportParseResult,
+  generateProductExportData,
+  generateInventoryExportData,
+  generateBackupPayload,
+  validateBackupPayload,
+  UhfBackupPayload,
+} from './importExportService';
+import { saveAndShareFile, SaveAndShareResult } from './fileService';
 
 const STORAGE_KEYS = {
   PRODUCTS: 'rfid_offline_products_v1',
   SESSIONS: 'rfid_offline_sessions_v1',
   READER_STATE: 'rfid_offline_reader_state_v1',
   APP_SETTINGS: 'rfid_offline_app_settings_v1',
+  LAST_BACKUP: 'rfid_offline_last_backup_v1',
 };
 
 export const StorageService = {
@@ -82,200 +93,167 @@ export const StorageService = {
     }
   },
 
+  getLastBackupTime(): string | null {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.LAST_BACKUP);
+    } catch {
+      return null;
+    }
+  },
+
+  setLastBackupTime(timeStr: string): void {
+    try {
+      localStorage.setItem(STORAGE_KEYS.LAST_BACKUP, timeStr);
+    } catch (e) {
+      console.error('Failed to save last backup time:', e);
+    }
+  },
+
   resetToDefaults(): void {
     try {
       localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
       localStorage.removeItem(STORAGE_KEYS.SESSIONS);
       localStorage.removeItem(STORAGE_KEYS.READER_STATE);
       localStorage.removeItem(STORAGE_KEYS.APP_SETTINGS);
+      localStorage.removeItem(STORAGE_KEYS.LAST_BACKUP);
     } catch {
       // fallback
     }
   },
 
-  /**
-   * Export inventory session or custom data to CSV or Excel XLSX
-   */
-  exportInventory(
-    session: InventorySession,
-    format: 'CSV' | 'XLSX',
-    options: ExportOptions,
-    customFilename?: string
-  ): { filename: string; blob: Blob } {
-    let filteredTags = session.scannedTags;
-
-    if (!options.includeMissing) {
-      filteredTags = filteredTags.filter(t => t.status !== 'MISSING');
-    }
-    if (!options.includeExtra) {
-      filteredTags = filteredTags.filter(t => t.status !== 'EXTRA');
-    }
-    if (!options.includeUnknown) {
-      filteredTags = filteredTags.filter(t => t.status !== 'UNKNOWN');
-    }
-
-    const rows = filteredTags.map(tag => {
-      const row: Record<string, string | number> = {
-        EPC: tag.epc,
-        Status: tag.status,
-      };
-
-      if (options.includeProductInfo) {
-        row['SKU'] = tag.sku || 'N/A';
-        row['Product Name'] = tag.productName || 'Unknown / Unassigned';
-        row['Location'] = tag.location || 'N/A';
-      }
-
-      if (options.includeRssi) {
-        row['Signal (dBm)'] = tag.rssi;
-      }
-
-      if (options.includeReadCount) {
-        row['Read Count'] = tag.readCount;
-      }
-
-      if (options.includeFirstSeen) {
-        row['First Seen'] = tag.firstSeen;
-      }
-
-      if (options.includeLastSeen) {
-        row['Last Seen'] = tag.lastSeen;
-      }
-
-      return row;
-    });
-
-    const cleanName = (session.name || 'Inventory').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const timestamp = new Date().toISOString().slice(0, 10);
-    const baseFilename = customFilename || `${cleanName}_${timestamp}`;
-
-    if (format === 'CSV') {
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-      const csvOutput = XLSX.utils.sheet_to_csv(worksheet);
-      const blob = new Blob([csvOutput], { type: 'text/csv;charset=utf-8;' });
-      return { filename: `${baseFilename}.csv`, blob };
-    } else {
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Inventory_Results');
-      
-      // Metadata summary sheet
-      const summaryData = [
-        { Parameter: 'Session Name', Value: session.name },
-        { Parameter: 'Location', Value: session.location },
-        { Parameter: 'Date', Value: session.startTime },
-        { Parameter: 'Duration', Value: `${Math.floor(session.durationSeconds / 60)}m ${session.durationSeconds % 60}s` },
-        { Parameter: 'Expected Tags', Value: session.expectedCount },
-        { Parameter: 'Found Tags', Value: session.foundCount },
-        { Parameter: 'Missing Tags', Value: session.missingCount },
-        { Parameter: 'Extra Tags', Value: session.extraCount },
-        { Parameter: 'Unknown Tags', Value: session.unknownCount },
-        { Parameter: 'Total Reads', Value: session.totalReads },
-      ];
-      const summarySheet = XLSX.utils.json_to_sheet(summaryData);
-      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Audit_Summary');
-
-      const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      return { filename: `${baseFilename}.xlsx`, blob };
-    }
-  },
+  // ===================================================================
+  // IMPORT & EXPORT METHODS
+  // ===================================================================
 
   /**
-   * Parse uploaded CSV or XLSX file
+   * Parse uploaded CSV or XLSX file and run validation against existing catalog
    */
-  async parseImportFile(file: File): Promise<{
-    filename: string;
-    totalRows: number;
-    items: ImportPreviewItem[];
-    validRows: Product[];
-    stats: { total: number; valid: number; warnings: number; errors: number };
-  }> {
+  async parseImportFile(file: File, existingProducts: Product[]): Promise<ImportParseResult & { filename: string }> {
     const data = await file.arrayBuffer();
     const workbook = XLSX.read(data, { type: 'array' });
     const firstSheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheetName];
-    const rawData = XLSX.utils.sheet_to_json<Record<string, string>>(worksheet, { defval: '' });
+    const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
 
-    const items: ImportPreviewItem[] = [];
-    const validRows: Product[] = [];
-    let validCount = 0;
-    let warningCount = 0;
-    let errorCount = 0;
-
-    rawData.forEach((row, index) => {
-      const rowNum = index + 2; // +1 for 0-index, +1 for header
-      const sku = (row['SKU'] || row['sku'] || row['Item Code'] || '').toString().trim();
-      const name = (row['Product'] || row['Product Name'] || row['name'] || row['Description'] || '').toString().trim();
-      const epc = (row['EPC'] || row['epc'] || row['RFID'] || row['Tag ID'] || '').toString().trim();
-      const barcode = (row['Barcode'] || row['barcode'] || row['UPC'] || '').toString().trim();
-      const category = (row['Category'] || row['category'] || 'General').toString().trim();
-      const location = (row['Location'] || row['location'] || 'Warehouse A').toString().trim();
-
-      if (!sku && !epc && !name) {
-        return;
-      }
-
-      let status: 'VALID' | 'WARNING' | 'ERROR' = 'VALID';
-      let message = 'Ready for catalog import';
-
-      if (!name) {
-        status = 'ERROR';
-        message = 'Missing Product Name';
-        errorCount++;
-      } else if (!sku) {
-        status = 'WARNING';
-        message = 'Missing SKU; will auto-generate code';
-        warningCount++;
-      } else if (epc && epc.length < 8) {
-        status = 'WARNING';
-        message = 'EPC format unusually short (< 8 chars)';
-        warningCount++;
-      } else {
-        validCount++;
-      }
-
-      items.push({
-        rowNumber: rowNum,
-        sku: sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
-        name: name || 'Unnamed Item',
-        epc: epc || 'No EPC',
-        location: location || 'Warehouse Floor',
-        category,
-        status,
-        message
-      });
-
-      if (status !== 'ERROR') {
-        const cleanSku = sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`;
-        const epcList = epc ? [epc] : [];
-        validRows.push({
-          id: `prod-import-${Date.now()}-${index}`,
-          name: name || 'Unnamed Item',
-          sku: cleanSku,
-          barcode: barcode || `BC-${cleanSku}`,
-          category,
-          description: `Imported item from ${file.name}`,
-          location,
-          epcList,
-          expectedQuantity: 1,
-          unit: 'pcs',
-          updatedAt: new Date().toISOString()
-        });
-      }
-    });
-
+    const result = parseAndValidateProductImport(rawRows, existingProducts);
     return {
+      ...result,
       filename: file.name,
-      totalRows: rawData.length,
-      items,
-      validRows,
-      stats: {
-        total: rawData.length,
-        valid: validCount,
-        warnings: warningCount,
-        errors: errorCount
-      }
     };
-  }
+  },
+
+  /**
+   * Export Products as CSV or XLSX with Android Save & Share
+   */
+  async exportProducts(
+    products: Product[],
+    format: 'CSV' | 'XLSX'
+  ): Promise<SaveAndShareResult> {
+    const data = generateProductExportData(products);
+    if (format === 'CSV') {
+      return await saveAndShareFile(
+        data.filenameCsv,
+        data.csvContent,
+        'text/csv;charset=utf-8;',
+        'Export Products (CSV)'
+      );
+    } else {
+      return await saveAndShareFile(
+        data.filenameXlsx,
+        data.xlsxBuffer,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Export Products (Excel)'
+      );
+    }
+  },
+
+  /**
+   * Export Inventory session as CSV or XLSX with Android Save & Share
+   */
+  async exportInventorySession(
+    session: InventorySession,
+    format: 'CSV' | 'XLSX'
+  ): Promise<SaveAndShareResult> {
+    const data = generateInventoryExportData(session);
+    if (format === 'CSV') {
+      return await saveAndShareFile(
+        data.filenameCsv,
+        data.csvContent,
+        'text/csv;charset=utf-8;',
+        `Export Inventory - ${session.name} (CSV)`
+      );
+    } else {
+      return await saveAndShareFile(
+        data.filenameXlsx,
+        data.xlsxBuffer,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        `Export Inventory - ${session.name} (Excel)`
+      );
+    }
+  },
+
+  /**
+   * Export full JSON Backup with Android Save & Share
+   */
+  async exportBackup(
+    products: Product[],
+    sessions: InventorySession[],
+    settings: AppSettings
+  ): Promise<SaveAndShareResult> {
+    const backup = generateBackupPayload(products, sessions, settings);
+    const result = await saveAndShareFile(
+      backup.filename,
+      backup.jsonString,
+      'application/json;charset=utf-8;',
+      'Export Database Backup'
+    );
+    if (result.success) {
+      this.setLastBackupTime(new Date().toISOString());
+    }
+    return result;
+  },
+
+  /**
+   * Validate and Restore JSON Backup
+   */
+  restoreBackup(rawJson: string): {
+    success: boolean;
+    error?: string;
+    payload?: UhfBackupPayload;
+  } {
+    const validation = validateBackupPayload(rawJson);
+    if (!validation.valid || !validation.payload) {
+      return { success: false, error: validation.error || 'INVALID BACKUP FILE' };
+    }
+
+    const { products, inventorySessions, settings } = validation.payload;
+    this.saveProducts(products);
+    this.saveSessions(inventorySessions);
+    this.saveAppSettings(settings);
+
+    return { success: true, payload: validation.payload };
+  },
+
+  /**
+   * Compatibility export method for legacy calls
+   */
+  exportInventory(
+    session: InventorySession,
+    format: 'CSV' | 'XLSX',
+    _options?: ExportOptions,
+    _customFilename?: string
+  ): { filename: string; blob: Blob } {
+    const data = generateInventoryExportData(session);
+    if (format === 'CSV') {
+      const blob = new Blob([data.csvContent], { type: 'text/csv;charset=utf-8;' });
+      return { filename: data.filenameCsv, blob };
+    } else {
+      const buffer = data.xlsxBuffer.buffer.slice(
+        data.xlsxBuffer.byteOffset,
+        data.xlsxBuffer.byteOffset + data.xlsxBuffer.byteLength
+      );
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      return { filename: data.filenameXlsx, blob };
+    }
+  },
 };

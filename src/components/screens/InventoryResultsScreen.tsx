@@ -18,7 +18,7 @@ import { InventorySession, TagStatus } from '../../types/rfid';
 import { AndroidTopBar } from '../common/AndroidTopBar';
 
 export const InventoryResultsScreen: React.FC = () => {
-  const { screenParams, navigateTo, sessions } = useRFID();
+  const { screenParams, navigateTo, sessions, exportInventorySession } = useRFID();
   const [activeTab, setActiveTab] = useState<'FOUND' | 'MISSING' | 'EXTRA' | 'UNKNOWN' | 'ALL'>('FOUND');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -196,14 +196,32 @@ export const InventoryResultsScreen: React.FC = () => {
 
         {/* Primary Action Buttons */}
         <div className="space-y-2.5 pt-1">
-          <button
-            id="btn-results-export"
-            onClick={() => navigateTo('export_data', { session })}
-            className="w-full py-4 bg-[#3f51b5] hover:bg-indigo-600 active:bg-indigo-800 text-white rounded-xl font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-md border-b-4 border-indigo-900 active:translate-y-0.5 transition-all"
-          >
-            <Download className="w-4 h-4 text-indigo-200" />
-            <span>EXPORT INVENTORY (CSV / EXCEL)</span>
-          </button>
+          {/* Direct Export Buttons (Phase 6 requirement) */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              id="btn-results-export-csv"
+              onClick={async () => {
+                if (!session) return;
+                await exportInventorySession(session, 'CSV');
+              }}
+              className="py-3.5 bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-800 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md border-b-4 border-emerald-950 active:translate-y-0.5 transition-all"
+            >
+              <Download className="w-4 h-4 text-emerald-200" />
+              <span>EXPORT CSV</span>
+            </button>
+
+            <button
+              id="btn-results-export-xlsx"
+              onClick={async () => {
+                if (!session) return;
+                await exportInventorySession(session, 'XLSX');
+              }}
+              className="py-3.5 bg-[#3f51b5] hover:bg-indigo-600 active:bg-indigo-800 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md border-b-4 border-indigo-900 active:translate-y-0.5 transition-all"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-indigo-200" />
+              <span>EXPORT XLSX</span>
+            </button>
+          </div>
 
           <div className="grid grid-cols-2 gap-2">
             <button

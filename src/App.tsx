@@ -23,6 +23,7 @@ import { ImportDataScreen } from './components/screens/ImportDataScreen';
 import { ExportDataScreen } from './components/screens/ExportDataScreen';
 import { AppSettingsScreen } from './components/screens/AppSettingsScreen';
 import { ScannerTestScreen } from './components/screens/ScannerTestScreen';
+import { BackupRestoreScreen } from './components/screens/BackupRestoreScreen';
 
 const MainScreenRouter: React.FC = () => {
   const { currentScreen } = useRFID();
@@ -44,6 +45,7 @@ const MainScreenRouter: React.FC = () => {
       case 'dashboard':
         return <DashboardScreen />;
       case 'reader_connection':
+      case 'reader_settings':
         return <ReaderConnectionScreen />;
       case 'start_inventory':
         return <StartInventoryScreen />;
@@ -71,7 +73,10 @@ const MainScreenRouter: React.FC = () => {
         return <ImportDataScreen />;
       case 'export_data':
         return <ExportDataScreen />;
+      case 'backup_restore':
+        return <BackupRestoreScreen />;
       case 'settings':
+      case 'app_settings':
         return <AppSettingsScreen />;
       case 'scanner_test':
         return <ScannerTestScreen />;

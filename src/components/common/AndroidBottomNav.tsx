@@ -47,7 +47,7 @@ export const AndroidBottomNav: React.FC = () => {
       label: 'More',
       targetScreen: 'reader_settings',
       icon: Menu,
-      isActive: ['reader_settings', 'app_settings', 'import_data', 'export_data', 'empty_states_demo', 'reader_connection'].includes(currentScreen)
+      isActive: ['reader_settings', 'app_settings', 'settings', 'backup_restore', 'import_data', 'export_data', 'empty_states_demo', 'reader_connection'].includes(currentScreen)
     }
   ];
 

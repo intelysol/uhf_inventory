@@ -19,6 +19,7 @@ export type ScreenType =
   | 'app_settings'
   | 'settings'
   | 'scanner_test'
+  | 'backup_restore'
   | 'empty_states_demo';
 
 export type TagStatus = 'FOUND' | 'MISSING' | 'EXTRA' | 'UNKNOWN';

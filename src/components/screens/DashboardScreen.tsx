@@ -11,7 +11,8 @@ import {
   ChevronRight,
   Radio,
   Layers,
-  ArrowUpRight
+  ArrowUpRight,
+  HardDrive
 } from 'lucide-react';
 import { useRFID } from '../../context/RFIDContext';
 import { ReaderStatusBadge } from '../common/ReaderStatusBadge';
@@ -245,6 +246,24 @@ export const DashboardScreen: React.FC = () => {
                 <div>
                   <h4 className="text-sm font-black text-slate-800">IMPORT / EXPORT</h4>
                   <p className="text-xs text-slate-500">CSV & Excel (.xlsx) data exchange</p>
+                </div>
+              </div>
+              <ChevronRight className="w-5 h-5 text-slate-400" />
+            </button>
+
+            {/* BACKUP & RESTORE */}
+            <button
+              id="btn-dash-backup-restore"
+              onClick={() => navigateTo('backup_restore')}
+              className="w-full p-3.5 flex items-center justify-between hover:bg-slate-50 active:bg-slate-100 transition-colors text-left"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
+                  <HardDrive className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-slate-800">BACKUP & RESTORE</h4>
+                  <p className="text-xs text-slate-500">JSON snapshot export & archive recovery</p>
                 </div>
               </div>
               <ChevronRight className="w-5 h-5 text-slate-400" />

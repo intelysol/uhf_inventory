@@ -10,14 +10,16 @@ import {
   Tag,
   ArrowRight,
   ChevronRight,
-  Layers
+  Layers,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 import { useRFID } from '../../context/RFIDContext';
 import { AndroidTopBar } from '../common/AndroidTopBar';
 import { Product } from '../../types/rfid';
 
 export const ProductsScreen: React.FC = () => {
-  const { products, navigateTo, setFinderTarget, setFinderProximityManual } = useRFID();
+  const { products, navigateTo, setFinderTarget, setFinderProximityManual, exportProducts } = useRFID();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
@@ -117,6 +119,33 @@ export const ProductsScreen: React.FC = () => {
           <Plus className="w-4 h-4 text-[#3f51b5]" />
           <span>+ ADD NEW PRODUCT</span>
         </button>
+
+        {/* Quick Export Buttons (Phase 6 requirement) */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            id="btn-products-export-csv"
+            type="button"
+            onClick={async () => {
+              await exportProducts('CSV');
+            }}
+            className="py-2.5 bg-white hover:bg-slate-50 text-emerald-800 border border-emerald-300 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-colors"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-600" />
+            <span>EXPORT CSV</span>
+          </button>
+
+          <button
+            id="btn-products-export-xlsx"
+            type="button"
+            onClick={async () => {
+              await exportProducts('XLSX');
+            }}
+            className="py-2.5 bg-white hover:bg-slate-50 text-[#3f51b5] border border-indigo-300 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-colors"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-[#3f51b5]" />
+            <span>EXPORT XLSX</span>
+          </button>
+        </div>
 
         {/* Product Cards List */}
         <div className="space-y-3">

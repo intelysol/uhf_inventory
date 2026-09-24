@@ -88,6 +88,13 @@ interface RFIDContextValue {
   simulatePhysicalTrigger: () => void;
   resetAllData: () => void;
   resetDatabaseToMock: () => void;
+
+  // Phase 6: File Export, Backup & Restore
+  exportProducts: (format: 'CSV' | 'XLSX') => Promise<any>;
+  exportInventorySession: (session: InventorySession, format: 'CSV' | 'XLSX') => Promise<any>;
+  exportBackup: () => Promise<any>;
+  restoreBackup: (jsonString: string) => { success: boolean; error?: string };
+  lastBackupTime: string | null;
 }
 
 const RFIDContext = createContext<RFIDContextValue | null>(null);
@@ -553,12 +560,44 @@ export const RFIDProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUnknownTagPrompt(null);
   }, []);
 
+  const [lastBackupTime, setLastBackupTime] = useState<string | null>(() => StorageService.getLastBackupTime());
+
+  const exportProducts = useCallback(async (format: 'CSV' | 'XLSX') => {
+    return await StorageService.exportProducts(products, format);
+  }, [products]);
+
+  const exportInventorySession = useCallback(async (session: InventorySession, format: 'CSV' | 'XLSX') => {
+    return await StorageService.exportInventorySession(session, format);
+  }, []);
+
+  const exportBackup = useCallback(async () => {
+    const res = await StorageService.exportBackup(products, sessions, appSettings);
+    if (res.success) {
+      setLastBackupTime(StorageService.getLastBackupTime());
+    }
+    return res;
+  }, [products, sessions, appSettings]);
+
+  const restoreBackup = useCallback((jsonString: string) => {
+    const res = StorageService.restoreBackup(jsonString);
+    if (res.success && res.payload) {
+      setProducts(res.payload.products);
+      setSessions(res.payload.inventorySessions);
+      setAppSettings(res.payload.settings);
+      const now = new Date().toISOString();
+      setLastBackupTime(now);
+      StorageService.setLastBackupTime(now);
+    }
+    return res;
+  }, []);
+
   const resetAllData = useCallback(() => {
     StorageService.resetToDefaults();
     setProducts(StorageService.getProducts());
     setSessions(StorageService.getSessions());
     setReaderState(StorageService.getReaderState());
     setAppSettings(StorageService.getAppSettings());
+    setLastBackupTime(null);
   }, []);
 
   const value: RFIDContextValue = {
@@ -613,7 +652,14 @@ export const RFIDProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setBluetoothPermissionGranted,
     simulatePhysicalTrigger,
     resetAllData,
-    resetDatabaseToMock: resetAllData
+    resetDatabaseToMock: resetAllData,
+
+    // Phase 6
+    exportProducts,
+    exportInventorySession,
+    exportBackup,
+    restoreBackup,
+    lastBackupTime,
   };
 
   return <RFIDContext.Provider value={value}>{children}</RFIDContext.Provider>;

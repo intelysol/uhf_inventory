@@ -24,7 +24,8 @@ export const AppSettingsScreen: React.FC = () => {
     updateAppSettings,
     products,
     sessions,
-    resetDatabaseToMock
+    resetDatabaseToMock,
+    navigateTo
   } = useRFID();
 
   const [savedNotice, setSavedNotice] = useState(false);
@@ -230,6 +231,17 @@ export const AppSettingsScreen: React.FC = () => {
               <span className="text-base font-black text-slate-900 block mt-0.5">{sessions.length} Sessions</span>
             </div>
           </div>
+
+          {/* Backup & Restore button */}
+          <button
+            id="btn-nav-backup-restore"
+            type="button"
+            onClick={() => navigateTo('backup_restore')}
+            className="w-full py-3 bg-[#3f51b5] hover:bg-indigo-600 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm transition-colors"
+          >
+            <HardDrive className="w-4 h-4" />
+            <span>BACKUP & RESTORE DATABASE</span>
+          </button>
 
           {/* Reset button */}
           <button
