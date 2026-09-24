@@ -205,78 +205,6 @@ export const RFIDProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }));
   }, []);
 
-  // Tag Simulation Engine for Live Inventory and Quick Scan
-  const simulateTagBatch = useCallback(() => {
-    if (!readerState.connected) return;
-
-    // Collect all available EPCs from products plus some extra & unknown EPCs
-    const knownProductsMap = new Map<string, Product>();
-    products.forEach(p => {
-      p.epcList.forEach(epc => knownProductsMap.set(epc, p));
-    });
-
-    const candidateEpcs = [
-      'E280116060000123',
-      'E280116060000124',
-      'E280116060000125',
-      'E280116060000456',
-      'E280116060000457',
-      'E280116060000789',
-      'E280116060000321',
-      'E280116060000654',
-      'E280116060000655',
-      'E280116060000987',
-      'E280116060000111',
-      'E280116060000222',
-      'E280116060000888', // Extra tag
-      'E280116060000999', // Unknown tag
-    ];
-
-    // Pick 1-4 random EPCs to simulate high-speed reading
-    const readCountThisTick = Math.floor(Math.random() * 4) + 1;
-    const nowTime = new Date().toLocaleTimeString('en-GB', { hour12: false });
-
-    for (let i = 0; i < readCountThisTick; i++) {
-      const randomEpc = candidateEpcs[Math.floor(Math.random() * candidateEpcs.length)];
-      if (ignoredEpcs.has(randomEpc)) continue;
-
-      const baseRssi = -38 - Math.floor(Math.random() * 35); // -38 to -73 dBm
-      const matchedProd = knownProductsMap.get(randomEpc);
-
-      // Play audio beep
-      if (appSettings.audioFeedback && Math.random() < 0.4) {
-        soundManager.playTagBeep(2400 + Math.floor(Math.random() * 300), 0.03, 0.1);
-      }
-
-      // Quick Scan simulation for testing
-      setQuickScanTags(prevTags => {
-        const idx = prevTags.findIndex(t => t.epc === randomEpc);
-        if (idx >= 0) {
-          const updated = [...prevTags];
-          updated[idx] = {
-            ...updated[idx],
-            rssi: baseRssi,
-            readCount: updated[idx].readCount + 1,
-            lastSeen: nowTime
-          };
-          return updated;
-        } else {
-          return [
-            {
-              epc: randomEpc,
-              rssi: baseRssi,
-              readCount: 1,
-              firstSeen: nowTime,
-              lastSeen: nowTime,
-              matchedProduct: matchedProd ? { name: matchedProd.name, sku: matchedProd.sku } : undefined
-            },
-            ...prevTags
-          ];
-        }
-      });
-    }
-  }, [readerState.connected, products, ignoredEpcs, appSettings.audioFeedback, activeSession, unknownTagPrompt]);
-
   // Start scanning
   const startScanning = useCallback(() => {
     setIsScanning(true);
@@ -287,10 +215,6 @@ export const RFIDProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const stopScanning = useCallback(() => {
     setIsScanning(false);
     inventoryManager.pauseScanning();
-    if (scanIntervalRef.current) {
-      clearInterval(scanIntervalRef.current);
-      scanIntervalRef.current = null;
-    }
   }, []);
 
   const toggleScanning = useCallback(() => {
@@ -326,24 +250,6 @@ export const RFIDProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [simulatePhysicalTrigger]);
-
-  // Scanning loop timer
-  useEffect(() => {
-    if (isScanning && readerState.connected) {
-      const intervalMs = readerState.inventoryMode === 'Fast' ? 120 : 250;
-      scanIntervalRef.current = window.setInterval(simulateTagBatch, intervalMs);
-    } else {
-      if (scanIntervalRef.current) {
-        clearInterval(scanIntervalRef.current);
-        scanIntervalRef.current = null;
-      }
-    }
-    return () => {
-      if (scanIntervalRef.current) {
-        clearInterval(scanIntervalRef.current);
-      }
-    };
-  }, [isScanning, readerState.connected, readerState.inventoryMode, simulateTagBatch]);
 
   // Active Session elapsed timer
   useEffect(() => {

@@ -24,9 +24,41 @@ import { ExportDataScreen } from './components/screens/ExportDataScreen';
 import { AppSettingsScreen } from './components/screens/AppSettingsScreen';
 import { ScannerTestScreen } from './components/screens/ScannerTestScreen';
 import { BackupRestoreScreen } from './components/screens/BackupRestoreScreen';
+import { App as CapApp } from '@capacitor/app';
 
 const MainScreenRouter: React.FC = () => {
-  const { currentScreen } = useRFID();
+  const { currentScreen, navigationStack, goBack, unknownTagPrompt, setUnknownTagPrompt } = useRFID();
+
+  // Android physical / system back button handler
+  React.useEffect(() => {
+    let removeListener: (() => void) | null = null;
+
+    CapApp.addListener('backButton', () => {
+      // 1. If unknown tag modal is open, close modal
+      if (unknownTagPrompt) {
+        setUnknownTagPrompt(null);
+        return;
+      }
+
+      // 2. If on sub-screen or detail view, navigate to previous screen
+      if (navigationStack.length > 1 && currentScreen !== 'dashboard') {
+        goBack();
+      } else {
+        // 3. At root screen (dashboard), standard Android exit behavior
+        CapApp.exitApp();
+      }
+    }).then(handler => {
+      removeListener = () => handler.remove();
+    }).catch(() => {
+      // Web fallback
+    });
+
+    return () => {
+      if (removeListener) {
+        removeListener();
+      }
+    };
+  }, [currentScreen, navigationStack, unknownTagPrompt, goBack, setUnknownTagPrompt]);
 
   // Screens where Bottom Navigation should be hidden for focused full-screen warehouse work
   const hideBottomNavScreens = [

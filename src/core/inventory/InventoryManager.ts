@@ -1,5 +1,5 @@
 import { HidScanEvent } from '../hid/HidScanEvent';
-import { hidScannerService } from '../hid/HidScannerService';
+import { hidScannerService, HidScannerService } from '../hid/HidScannerService';
 import { InventorySession, InventoryTag } from './InventoryTypes';
 import { Product } from '../../types/rfid';
 import { StorageService } from '../../services/storage';
@@ -8,11 +8,16 @@ export type InventorySessionListener = (session: InventorySession) => void;
 export type LatestScanListener = (scan: { epc: string; readCount: number; lastSeen: number }) => void;
 
 export class InventoryManager {
+  private scannerService: HidScannerService;
   private activeSession: InventorySession | null = null;
   private isScanning: boolean = false;
   private inventoryMap: Map<string, InventoryTag> = new Map();
   private totalReads: number = 0;
   private productIndex: Map<string, Product> = new Map();
+
+  constructor(scannerService: HidScannerService = hidScannerService) {
+    this.scannerService = scannerService;
+  }
 
   // Expected inventory tracking
   private expectedEpcs: Set<string> = new Set();
@@ -127,8 +132,8 @@ export class InventoryManager {
     this.isScanning = true;
 
     // 5. Ensure HID scanner service is active and subscribe to real RFID events
-    hidScannerService.start();
-    this.unsubscribeHid = hidScannerService.subscribe(this.processRfidScan.bind(this));
+    this.scannerService.start();
+    this.unsubscribeHid = this.scannerService.subscribe(this.processRfidScan.bind(this));
 
     // 6. Start elapsed timer
     this.startElapsedTimer();
