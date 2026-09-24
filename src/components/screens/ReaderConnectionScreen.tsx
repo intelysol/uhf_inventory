@@ -19,7 +19,7 @@ import { AndroidTopBar } from '../common/AndroidTopBar';
 import { soundManager } from '../../utils/audio';
 
 export const ReaderConnectionScreen: React.FC = () => {
-  const { readerState, updateReaderState, connectReader, disconnectReader } = useRFID();
+  const { readerState, updateReaderState, connectReader, disconnectReader, navigateTo } = useRFID();
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
 
   const handlePowerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -135,6 +135,17 @@ export const ReaderConnectionScreen: React.FC = () => {
                 )}
               </button>
             )}
+
+            <div className="pt-2">
+              <button
+                id="btn-goto-scanner-test"
+                onClick={() => navigateTo('scanner_test')}
+                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 border border-slate-700 shadow-sm transition-all"
+              >
+                <Radio className="w-4 h-4 text-emerald-400" />
+                <span>OPEN HARDWARE SCANNER TEST</span>
+              </button>
+            </div>
           </div>
         </div>
 

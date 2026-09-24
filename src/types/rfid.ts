@@ -18,6 +18,7 @@ export type ScreenType =
   | 'reader_settings'
   | 'app_settings'
   | 'settings'
+  | 'scanner_test'
   | 'empty_states_demo';
 
 export type TagStatus = 'FOUND' | 'MISSING' | 'EXTRA' | 'UNKNOWN';

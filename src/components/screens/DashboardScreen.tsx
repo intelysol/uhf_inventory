@@ -35,19 +35,56 @@ export const DashboardScreen: React.FC = () => {
           </div>
         </div>
 
-        <button
-          onClick={() => navigateTo('empty_states_demo')}
-          className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-indigo-100 text-xs font-bold rounded-xl border border-white/20 transition-colors flex items-center gap-1"
-          title="Inspect empty and error states gallery"
-        >
-          <Layers className="w-3.5 h-3.5 text-indigo-200" />
-          <span>States UI</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            id="btn-dash-scanner-test"
+            onClick={() => navigateTo('scanner_test')}
+            className="px-2.5 py-1.5 bg-emerald-500/80 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl border border-emerald-400/30 transition-colors flex items-center gap-1 shadow-xs"
+            title="Open H103 Hardware Scanner Test"
+          >
+            <Radio className="w-3.5 h-3.5" />
+            <span>HID Test</span>
+          </button>
+
+          <button
+            onClick={() => navigateTo('empty_states_demo')}
+            className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-indigo-100 text-xs font-bold rounded-xl border border-white/20 transition-colors flex items-center gap-1"
+            title="Inspect empty and error states gallery"
+          >
+            <Layers className="w-3.5 h-3.5 text-indigo-200" />
+            <span>States UI</span>
+          </button>
+        </div>
       </header>
 
       <div className="p-4 space-y-4">
         {/* Prominent Reader Status Card */}
         <ReaderStatusBadge />
+
+        {/* Hardware HID Scanner Direct Test Card */}
+        <button
+          id="btn-dash-scanner-test-card"
+          onClick={() => navigateTo('scanner_test')}
+          className="w-full text-left bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-3.5 rounded-2xl shadow-md border border-indigo-500/30 active:scale-[0.99] transition-all flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-indigo-500/20 text-indigo-300 rounded-xl border border-indigo-400/30">
+              <Radio className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="font-black text-sm uppercase tracking-wide flex items-center gap-1.5 text-white">
+                <span>H103 HID SCANNER TEST</span>
+                <span className="bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-mono border border-emerald-400/30">
+                  REAL HARDWARE
+                </span>
+              </div>
+              <div className="text-[11px] text-indigo-200">
+                Direct Bluetooth keyboard input verification & diagnostics
+              </div>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-indigo-300 group-hover:translate-x-1 transition-transform" />
+        </button>
 
         {/* Primary Operations Section */}
         <div className="space-y-3 pt-1">
