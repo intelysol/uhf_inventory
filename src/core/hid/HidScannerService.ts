@@ -52,7 +52,9 @@ export class HidScannerService {
   public start(): void {
     if (this.active) return;
     this.active = true;
-    window.addEventListener('keydown', this.handleKeyDown, { capture: true });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', this.handleKeyDown, { capture: true });
+    }
   }
 
   /**
@@ -61,7 +63,9 @@ export class HidScannerService {
   public stop(): void {
     if (!this.active) return;
     this.active = false;
-    window.removeEventListener('keydown', this.handleKeyDown, { capture: true });
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('keydown', this.handleKeyDown, { capture: true });
+    }
     this.buffer.reset();
   }
 

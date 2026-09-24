@@ -10,6 +10,7 @@ import {
 } from '../types/rfid';
 import { StorageService } from '../services/storage';
 import { soundManager } from '../utils/audio';
+import { inventoryManager } from '../core/inventory/InventoryManager';
 
 interface NavigationState {
   screen: ScreenType;
@@ -154,6 +155,14 @@ export const RFIDProvider: React.FC<{ children: React.ReactNode }> = ({ children
     StorageService.saveAppSettings(appSettings);
   }, [appSettings]);
 
+  // Synchronize real inventory session updates with activeSession state
+  useEffect(() => {
+    const unsub = inventoryManager.subscribeSession(session => {
+      setActiveSession(session as any);
+    });
+    return () => unsub();
+  }, []);
+
   const updateReaderState = useCallback((partial: Partial<H103ReaderState>) => {
     setReaderState(prev => ({ ...prev, ...partial }));
   }, []);
@@ -230,66 +239,7 @@ export const RFIDProvider: React.FC<{ children: React.ReactNode }> = ({ children
         soundManager.playTagBeep(2400 + Math.floor(Math.random() * 300), 0.03, 0.1);
       }
 
-      // If active session is in progress, update session tags
-      if (activeSession) {
-        setActiveSession(prevSession => {
-          if (!prevSession) return null;
-          const existingTagIndex = prevSession.scannedTags.findIndex(t => t.epc === randomEpc);
-          let updatedTags = [...prevSession.scannedTags];
-
-          let tagStatus: 'FOUND' | 'MISSING' | 'EXTRA' | 'UNKNOWN' = 'FOUND';
-          if (!matchedProd) {
-            tagStatus = randomEpc.endsWith('999') ? 'UNKNOWN' : 'EXTRA';
-          }
-
-          if (existingTagIndex >= 0) {
-            const existing = updatedTags[existingTagIndex];
-            updatedTags[existingTagIndex] = {
-              ...existing,
-              rssi: baseRssi,
-              readCount: existing.readCount + 1,
-              lastSeen: nowTime,
-            };
-          } else {
-            const newTag: RFIDTagRead = {
-              epc: randomEpc,
-              rssi: baseRssi,
-              readCount: 1,
-              firstSeen: nowTime,
-              lastSeen: nowTime,
-              productId: matchedProd?.id,
-              productName: matchedProd?.name,
-              sku: matchedProd?.sku,
-              location: matchedProd?.location,
-              status: tagStatus
-            };
-            updatedTags = [newTag, ...updatedTags];
-
-            // Trigger prompt for unknown tag if configured
-            if (tagStatus === 'UNKNOWN' && !unknownTagPrompt) {
-              setUnknownTagPrompt(newTag);
-              soundManager.playAlertBeep();
-            }
-          }
-
-          const foundCount = updatedTags.filter(t => t.status === 'FOUND').length;
-          const extraCount = updatedTags.filter(t => t.status === 'EXTRA').length;
-          const unknownCount = updatedTags.filter(t => t.status === 'UNKNOWN').length;
-          const missingCount = Math.max(0, prevSession.expectedCount - foundCount);
-
-          return {
-            ...prevSession,
-            scannedTags: updatedTags,
-            foundCount,
-            extraCount,
-            unknownCount,
-            missingCount,
-            totalReads: prevSession.totalReads + 1
-          };
-        });
-      }
-
-      // If quick scan is active, update quick scan list
+      // Quick Scan simulation for testing
       setQuickScanTags(prevTags => {
         const idx = prevTags.findIndex(t => t.epc === randomEpc);
         if (idx >= 0) {
@@ -320,16 +270,14 @@ export const RFIDProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Start scanning
   const startScanning = useCallback(() => {
-    if (!readerState.connected) {
-      soundManager.playAlertBeep();
-      return;
-    }
     setIsScanning(true);
+    inventoryManager.resumeScanning();
     soundManager.playTagBeep(2600, 0.1, 0.2);
-  }, [readerState.connected]);
+  }, []);
 
   const stopScanning = useCallback(() => {
     setIsScanning(false);
+    inventoryManager.pauseScanning();
     if (scanIntervalRef.current) {
       clearInterval(scanIntervalRef.current);
       scanIntervalRef.current = null;
@@ -406,77 +354,34 @@ export const RFIDProvider: React.FC<{ children: React.ReactNode }> = ({ children
     name: string,
     location: string,
     notes?: string,
-    useExpectedList = true
+    _useExpectedList = true
   ) => {
-    const totalExpected = useExpectedList
-      ? products.reduce((acc, p) => acc + p.epcList.length, 0) || 1284
-      : 0;
-
-    const initialTags: RFIDTagRead[] = [];
-    if (useExpectedList) {
-      // Pre-fill missing tags so user can see progress
-      products.forEach(prod => {
-        prod.epcList.forEach(epc => {
-          initialTags.push({
-            epc,
-            rssi: -99,
-            readCount: 0,
-            firstSeen: '-',
-            lastSeen: '-',
-            productId: prod.id,
-            productName: prod.name,
-            sku: prod.sku,
-            location: prod.location,
-            status: 'MISSING'
-          });
-        });
-      });
-    }
-
-    const newSession: InventorySession = {
-      id: `session-${Date.now()}`,
-      name: name || `Inventory ${new Date().toLocaleDateString()}`,
-      location: location || 'Warehouse A',
-      notes: notes || '',
-      startTime: new Date().toISOString(),
-      durationSeconds: 0,
-      expectedCount: totalExpected,
-      foundCount: 0,
-      missingCount: totalExpected,
-      extraCount: 0,
-      unknownCount: 0,
-      totalReads: 0,
-      status: 'IN_PROGRESS',
-      scannedTags: initialTags
-    };
-
-    setActiveSession(newSession);
+    const session = inventoryManager.startSession(name, location, notes, products);
+    setActiveSession(session as any);
+    setIsScanning(true);
     navigateTo('live_inventory');
-    startScanning();
-  }, [products, navigateTo, startScanning]);
+    soundManager.playTagBeep(2600, 0.1, 0.2);
+  }, [products, navigateTo]);
 
   const finishInventorySession = useCallback(() => {
-    if (!activeSession) return null;
-    stopScanning();
-
-    const finishedSession: InventorySession = {
-      ...activeSession,
-      status: 'COMPLETED',
-      endTime: new Date().toISOString()
-    };
-
-    setSessions(prev => [finishedSession, ...prev]);
-    setActiveSession(null);
-    navigateTo('inventory_results', { session: finishedSession });
-    soundManager.playSuccessChime();
-    return finishedSession;
-  }, [activeSession, stopScanning, navigateTo]);
+    const finished = inventoryManager.stopSession();
+    if (finished) {
+      setSessions(prev => [finished as any, ...prev.filter(s => s.id !== finished.id)]);
+      setActiveSession(null);
+      setIsScanning(false);
+      navigateTo('inventory_results', { session: finished });
+      soundManager.playSuccessChime();
+      return finished as any;
+    }
+    return null;
+  }, [navigateTo]);
 
   const cancelInventorySession = useCallback(() => {
-    stopScanning();
+    inventoryManager.stopSession();
     setActiveSession(null);
+    setIsScanning(false);
     navigateTo('dashboard');
-  }, [stopScanning, navigateTo]);
+  }, [navigateTo]);
 
   const deleteSession = useCallback((id: string) => {
     setSessions(prev => prev.filter(s => s.id !== id));

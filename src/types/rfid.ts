@@ -67,6 +67,8 @@ export interface InventorySession {
   name: string;
   location: string;
   notes?: string;
+  startedAt?: number;
+  completedAt?: number;
   startTime: string;
   endTime?: string;
   durationSeconds: number;
@@ -76,8 +78,10 @@ export interface InventorySession {
   extraCount: number;
   unknownCount: number;
   totalReads: number;
-  status: 'IN_PROGRESS' | 'COMPLETED';
-  scannedTags: RFIDTagRead[];
+  uniqueTags?: number;
+  status: 'ACTIVE' | 'IN_PROGRESS' | 'COMPLETED';
+  tags?: any[];
+  scannedTags: any[];
   items?: InventorySessionItem[];
 }
 
