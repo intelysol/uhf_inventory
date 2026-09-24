@@ -11,6 +11,7 @@ import {
 import { StorageService } from '../services/storage';
 import { soundManager } from '../utils/audio';
 import { inventoryManager } from '../core/inventory/InventoryManager';
+import { productFinderManager } from '../core/finder/ProductFinderManager';
 
 interface NavigationState {
   screen: ScreenType;
@@ -303,7 +304,12 @@ export const RFIDProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Hardware trigger simulation (e.g. Sled trigger button or Spacebar hotkey)
   const simulatePhysicalTrigger = useCallback(() => {
     if (currentScreen === 'find_radar') {
-      toggleFinderSearch();
+      const state = productFinderManager.getState();
+      if (state.status === 'FINDING' || state.status === 'FOUND') {
+        productFinderManager.stopFinding();
+      } else {
+        productFinderManager.startFinding();
+      }
     } else {
       toggleScanning();
     }
@@ -511,26 +517,6 @@ export const RFIDProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const toggleFinderSearch = useCallback(() => {
     setIsFinderSearching(prev => !prev);
   }, []);
-
-  // Dynamic radar beep interval loop when searching
-  useEffect(() => {
-    if (isFinderSearching && appSettings.audioFeedback) {
-      const intervalMs = Math.max(80, 1000 - (finderProximity / 100) * 850);
-      radarAudioIntervalRef.current = window.setInterval(() => {
-        soundManager.playProximityPulse(finderProximity);
-      }, intervalMs);
-    } else {
-      if (radarAudioIntervalRef.current) {
-        clearInterval(radarAudioIntervalRef.current);
-        radarAudioIntervalRef.current = null;
-      }
-    }
-    return () => {
-      if (radarAudioIntervalRef.current) {
-        clearInterval(radarAudioIntervalRef.current);
-      }
-    };
-  }, [isFinderSearching, finderProximity, appSettings.audioFeedback]);
 
   // Unknown Tag actions
   const assignUnknownTag = useCallback((epc: string, productId: string) => {

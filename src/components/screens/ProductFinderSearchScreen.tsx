@@ -25,37 +25,36 @@ export const ProductFinderSearchScreen: React.FC = () => {
   });
 
   const handleStartFind = (product: Product, selectedEpc?: string) => {
-    const epc = selectedEpc || product.epcList[0] || 'E280116060000123';
+    const epc = selectedEpc || 'ALL';
     setFinderTarget({ product, epc });
-    setFinderProximityManual(82); // Initial target proximity
     navigateTo('find_radar', { product, epc });
   };
 
   const handleQuickFindEpc = (epc: string, title: string, sku: string) => {
     const matched = products.find(p => p.epcList.includes(epc));
-    setFinderTarget({ product: matched, epc });
-    setFinderProximityManual(75);
+    const targetProduct = matched || {
+      id: 'quick-target',
+      name: title,
+      sku,
+      barcode: '',
+      category: 'Search Target',
+      description: '',
+      location: 'Warehouse Floor',
+      epcList: [epc],
+      expectedQuantity: 1,
+      unit: 'pcs',
+      updatedAt: ''
+    };
+    setFinderTarget({ product: targetProduct, epc });
     navigateTo('find_radar', {
-      product: matched || {
-        id: 'quick-target',
-        name: title,
-        sku,
-        barcode: '',
-        category: 'Search Target',
-        description: '',
-        location: 'Warehouse Floor',
-        epcList: [epc],
-        expectedQuantity: 1,
-        unit: 'pcs',
-        updatedAt: ''
-      },
+      product: targetProduct,
       epc
     });
   };
 
   return (
     <div className="w-full h-full flex flex-col bg-[#f0f2f5] overflow-y-auto no-scrollbar pb-24">
-      <AndroidTopBar title="Find Product" subtitle="RFID Proximity Locator" />
+      <AndroidTopBar title="Find Product" subtitle="Select Product to Find via H103 RFID" />
 
       <div className="p-4 space-y-4">
         {/* Search Input Box */}

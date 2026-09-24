@@ -100,4 +100,21 @@ export class RfidParser {
       valid: true,
     };
   }
+
+  /**
+   * Normalize an EPC string: trim, remove CR/LF, uppercase.
+   */
+  public static normalizeEpc(rawInput: string): string {
+    if (!rawInput) return '';
+    return rawInput.replace(/[\r\n]+/g, '').trim().toUpperCase();
+  }
+
+  /**
+   * Check if a string contains only valid hexadecimal characters.
+   */
+  public static isValidHex(input: string): boolean {
+    if (!input) return false;
+    const clean = input.replace(/[\r\n]+/g, '').trim();
+    return clean.length > 0 && /^[0-9A-F]+$/i.test(clean);
+  }
 }
